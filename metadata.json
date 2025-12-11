@@ -1,0 +1,7 @@
+{
+  "name": "Places Alarm",
+  "description": "A spatial reminder system that triggers alerts based on your location proximity to specific places.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
