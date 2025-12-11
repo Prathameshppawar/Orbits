@@ -209,9 +209,9 @@ const App: React.FC = () => {
 
   // --- Handlers ---
 
-  const handleSearch = async (query: string) => {
+  const handleSearch = async (query: string, signal?: AbortSignal) => {
     setIsSearching(true);
-    const results = await searchPlaces(query, userLocation || undefined);
+    const results = await searchPlaces(query, userLocation || undefined, signal);
     setSearchResults(results);
     setIsSearching(false);
   };

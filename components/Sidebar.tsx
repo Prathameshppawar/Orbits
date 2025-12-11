@@ -1,12 +1,12 @@
-import React, { useState } from "react";
-import { Search, Plus, MapPin, Trash2, CheckCircle2, Circle, Loader2 } from "lucide-react";
+import React, { useState, useRef } from "react";
+import { Search, MapPin, Trash2, CheckCircle2, Circle, Loader2, ArrowRight } from "lucide-react";
 import { Place, SearchResult } from "../types";
 import { CATEGORY_ICONS, CATEGORY_COLORS } from "../constants";
 
 interface SidebarProps {
   searchResults: SearchResult[];
   isSearching: boolean;
-  onSearch: (query: string) => void;
+  onSearch: (query: string, signal?: AbortSignal) => void;
   onSelectSearchResult: (result: SearchResult) => void;
   
   tasks: Place[];
@@ -27,10 +27,20 @@ const Sidebar: React.FC<SidebarProps> = ({
   onLocateTask,
 }) => {
   const [searchQuery, setSearchQuery] = useState("");
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (searchQuery.trim()) onSearch(searchQuery);
+    if (!searchQuery.trim()) return;
+
+    // Cancel any previous pending request
+    if (abortControllerRef.current) abortControllerRef.current.abort();
+    
+    // Create new controller for this specific request
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    
+    onSearch(searchQuery, controller.signal);
   };
 
   const activeTasks = tasks.filter(t => !t.isCompleted);
@@ -41,22 +51,43 @@ const Sidebar: React.FC<SidebarProps> = ({
       
       {/* Search Bar */}
       <div className="bg-white rounded-xl shadow-xl overflow-hidden pointer-events-auto border border-gray-200">
-        <form onSubmit={handleSearchSubmit} className="flex items-center p-3 bg-white">
-          <Search className="w-5 h-5 text-gray-500 mr-3" />
+        <form onSubmit={handleSearchSubmit} className="flex items-center p-2 bg-white gap-2">
+          <div className="pl-2">
+             <Search className="w-5 h-5 text-gray-400" />
+          </div>
           <input
             type="text"
-            className="flex-1 bg-transparent outline-none text-gray-900 placeholder-gray-500 text-base appearance-none"
-            placeholder="Search place or category (e.g. Bakery)..."
+            className="flex-1 bg-transparent outline-none text-gray-900 placeholder-gray-500 text-base py-2 appearance-none"
+            placeholder="Search nearby (e.g. Barber)..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
-          {isSearching && <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />}
+          {isSearching ? (
+             <div className="pr-3">
+                <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+             </div>
+          ) : (
+            <button 
+              type="submit" 
+              className="p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+              title="Search"
+            >
+              <ArrowRight className="w-5 h-5" />
+            </button>
+          )}
         </form>
         
         {/* Search Results Dropdown */}
         {searchResults.length > 0 && (
           <div className="max-h-60 overflow-y-auto bg-white border-t border-gray-100">
+            <div className="flex justify-between items-center px-4 py-2 bg-gray-50 text-xs font-bold text-gray-500 uppercase">
+              <span>Results</span>
+              <button onClick={() => {
+                // Clear results helper if needed, or user selects one
+              }} className="hover:text-gray-700"></button>
+            </div>
             {searchResults.map((result) => {
+              // Parse display name for cleaner UI (Komoot/Photon formatting)
               const parts = result.display_name.split(',');
               const mainName = parts[0];
               const address = parts.slice(1).join(',').trim();
@@ -75,7 +106,10 @@ const Sidebar: React.FC<SidebarProps> = ({
                   </div>
                   <div className="min-w-0">
                     <p className="text-sm font-semibold text-gray-900 truncate">{mainName}</p>
-                    <p className="text-xs text-gray-500 line-clamp-2">{address || result.type}</p>
+                    <div className="flex items-center gap-2 text-xs text-gray-500">
+                      <span className="bg-gray-100 px-1.5 py-0.5 rounded text-gray-600">{result.type}</span>
+                      <span className="truncate">{address}</span>
+                    </div>
                   </div>
                 </button>
               );

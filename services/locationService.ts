@@ -1,4 +1,4 @@
-import { Coordinate } from "../types";
+import { Coordinate, SearchResult } from "../types";
 
 export const calculateDistance = (coord1: Coordinate, coord2: Coordinate): number => {
   const R = 6371e3; // Earth radius in meters
@@ -35,40 +35,64 @@ export const getCurrentLocation = (): Promise<Coordinate> => {
   });
 };
 
-export const searchPlaces = async (query: string, userLocation?: Coordinate) => {
-  // Using OpenStreetMap Nominatim for free geocoding
+export const searchPlaces = async (
+  query: string, 
+  userLocation?: Coordinate, 
+  signal?: AbortSignal
+): Promise<SearchResult[]> => {
   try {
-    let url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=10&addressdetails=1`;
+    // Clean query
+    const cleanedQuery = query.replace(/(\s+|^)(near me|nearby|closest|near)(\s+|$)/gi, ' ').trim();
+    if (!cleanedQuery) return [];
 
-    // If user location is available, prioritize results near them
+    // Use Photon API (by Komoot) - Excellent for POI and Autocomplete
+    // Documentation: https://github.com/komoot/photon
+    let url = `https://photon.komoot.io/api/?q=${encodeURIComponent(cleanedQuery)}&limit=10&lang=en`;
+
+    // Prioritize results near the user
     if (userLocation) {
-      // Create a viewbox roughly 1 degree (approx 111km) around the user to bias results
-      // Format: <x1>,<y1>,<x2>,<y2> (left, top, right, bottom)
-      const offset = 0.5; // Roughly 50km radius bias
-      const viewbox = [
-        userLocation.lng - offset,
-        userLocation.lat + offset,
-        userLocation.lng + offset,
-        userLocation.lat - offset
-      ].join(',');
-      
-      // bounded=0 means "prefer results in this box, but don't exclude others"
-      // viewbox adds the spatial context
-      url += `&viewbox=${viewbox}&bounded=0`;
+      url += `&lat=${userLocation.lat}&lon=${userLocation.lng}`;
     }
 
-    const response = await fetch(url, {
-      headers: {
-        'Accept-Language': 'en-US,en;q=0.9' // Prefer English results
-      }
-    });
+    const response = await fetch(url, { signal });
     
     if (!response.ok) throw new Error("Search failed");
     
     const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error("Error searching places:", error);
+
+    // Map GeoJSON to our App's SearchResult format
+    return data.features.map((feature: any) => {
+      const { properties, geometry } = feature;
+      
+      // Construct a readable title/subtitle
+      // Photon returns: name, street, city, state, country, osm_key, osm_value
+      const name = properties.name || properties.street || "Unknown Place";
+      
+      const details = [
+        properties.street,
+        properties.city,
+        properties.state,
+        properties.country
+      ].filter(Boolean).filter(d => d !== name).join(', ');
+
+      // Determine type (e.g., "Shop", "Restaurant")
+      const type = properties.osm_value || properties.osm_key || "place";
+
+      return {
+        place_id: properties.osm_id || Math.random(),
+        lat: geometry.coordinates[1].toString(), // GeoJSON is [lon, lat]
+        lon: geometry.coordinates[0].toString(),
+        display_name: details ? `${name}, ${details}` : name,
+        type: type.charAt(0).toUpperCase() + type.slice(1)
+      };
+    });
+
+  } catch (error: any) {
+    if (error.name === 'AbortError') {
+      console.log('Search aborted');
+    } else {
+      console.error("Error searching places:", error);
+    }
     return [];
   }
 };
